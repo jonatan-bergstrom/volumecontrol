@@ -148,9 +148,10 @@ void startUp() {
         readMuteButton();
         if (muted) {
             break
-        } else if (encoder0Pos != storage.volume) { //encoder rotated during startup
+        } else if (encoder0Pos > storage.volume) { // cancel fade in if volume turned down
             storage.volume = encoder0Pos;
             updateVolume();
+            changed = TRUE;
             break
         }
         int vol = map(millis(),startUpSleepDuration, startUpSleepDuration + fadeInDuration, minVolume, storage.volume);
