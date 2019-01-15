@@ -8,9 +8,10 @@
 #define encoder0PinA  2
 #define encoder0PinB  3
 
-const int buttonPin = 4; 
+const int muteButtonPin = 4; 
 const int LED1Pin = 5;
 const int LED2Pin = 6;
+const int multiButtonPin = A0;
 
 volatile unsigned int encoder0Pos = 0;
 unsigned int lastEncoder0Pos = 0;
@@ -42,6 +43,12 @@ int buttonState;
 int lastButtonState = LOW;
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 50;    // the debounce time; increase if the output flickers
+
+int multiButtonState;
+int lastMultiButtonPressed;
+int timePressed;
+int minTimePressed = 100;
+
 
 
 void loadConfig() {
@@ -122,7 +129,7 @@ void updateVolume() {
 
 
 void readMuteButton() {
-    int buttonReading = digitalRead(buttonPin);
+    int buttonReading = digitalRead(muteButtonPin);
     if (buttonReading != lastButtonState) {
     // reset the debouncing timer
         lastDebounceTime = millis();
@@ -140,6 +147,50 @@ void readMuteButton() {
         }
     }
     lastButtonState = buttonReading;
+}
+
+
+void readMultiButton() {
+    
+    int multiMatrix[6][3] {
+        {911, 951, 1},  //10k:    931
+        {819, 859, 2},  //22k:    839
+        {750, 790, 3},  //33k:    770
+        {677, 717, 4},  //47k:    697
+        {590, 630, 5},  //68k:    610
+        {543, 583, 6}   //82k:    563
+    };
+
+    int reading = analogRead(multiButtonPin);
+    int buttonPressed = 0;
+
+    for (int i = 0; i< 6; i00) {
+        if (reading > multiMatrix[i][0]) && (reading < multiMatrix[i][1]) {
+            int p = multiMatrix[i][2]
+            if (multiButtonState == p) && (lastMultiButtonPressed != p) {
+                if (millis() - timePressed >= minTimePressed) {
+                    buttonPressed = p;
+                }
+            } else {
+                multiButtonState = p;
+                timePressed = millis();
+            }
+        }
+    }
+    if (buttonPressed == 1) {
+
+    } else if (buttonPressed == 2) {
+        
+    } else if (buttonPressed == 3) {
+        
+    } else if (buttonPressed == 4) {
+        
+    } else if (buttonPressed == 5) {
+        
+    } else if (buttonPressed == 6) {
+        
+    }
+
 }
 
 
@@ -169,7 +220,7 @@ void setup() {
 
     pinMode(encoder0PinA, INPUT);
     pinMode(encoder0PinB, INPUT);
-    pinMode(buttonPin, INPUT);
+    pinMode(muteButtonPin, INPUT);
     pinMode(LED1Pin, OUTPUT);
     pinMode(LED2Pin, OUTPUT);
 
@@ -189,7 +240,7 @@ void setup() {
 
 void loop() {
 
-    int reading = digitalRead(buttonPin);
+    int reading = digitalRead(muteButtonPin);
 
     if (changed) {
         if (millis() - lastChange > saveInterval && millis() - lastSave > saveInterval) {
@@ -210,5 +261,6 @@ void loop() {
     }
 
     readMuteButton();
+    readMultiButton();
 }
 
