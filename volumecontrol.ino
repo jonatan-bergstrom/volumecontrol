@@ -158,7 +158,7 @@ void readMultiButton() {
         {750, 790, 3},  //33k:    770
         {677, 717, 4},  //47k:    697
         {590, 630, 5},  //68k:    610
-        {543, 583, 6}   //82k:    563
+        {491, 531, 6}   //100k:    511
     };
 
     int reading = analogRead(multiButtonPin);
