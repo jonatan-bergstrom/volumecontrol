@@ -1,6 +1,46 @@
 #include <SPI.h>
 #include "mcp42xxx.h"
 #include <EEPROM.h>
+#include <AnalogButtons.h> //https://github.com/rlogiacco/AnalogButtons/
+#include <Arduino.h>
+#include <TM1637Display.h> //https://github.com/avishorp/TM1637
+#include "OVC3860.h" https://github.com/tomaskovacik/OVC3860
+
+#define resetBTPin 9
+OVC3860 BT(&Serial1, resetBTPin);
+uint16_t lastBTState;
+
+#define ANALOG_PIN A1
+
+#define CLK 2
+#define DIO 3
+TM1637Display display(CLK, DIO);
+display.setBrightness(0x0f);
+
+const uint8_t SEG_ON[] = {
+    ,
+    ,
+    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,   // O
+    SEG_C | SEG_E | SEG_G                           // n
+    };
+
+const uint8_t SEG_OFF[] = {
+    ,
+    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,   // O
+    SEG_A | SEG_E | SEG_F | SEG_G,                   // F
+    SEG_A | SEG_E | SEG_F | SEG_G,                   // F
+    };
+
+const uint8_t SEG_PAIR[] = {
+    ,
+    SEG_A | SEG_B | SEG_E | SEG_F | SEG_G,          // P
+    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_G , // a    
+    SEG_C ,                                         // i
+    SEG_E | SEG_G,                                  // r
+    };
+
+unsigned int lastDisplayUpdate;
+int displayOnTime = 2000;
 
 #define CONFIG_START 32
 #define CONFIG_VERSION "ls1"
@@ -49,6 +89,60 @@ int lastMultiButtonPressed;
 int timePressed;
 int minTimePressed = 100;
 
+void updateDisplay() {
+    if (millis() - lastDisplayUpdate > displayOnTime) {
+        display.clear();
+    }
+}
+
+void muteButtonClick() {
+    storage.muted = !storage.muted;
+    updateMuted();
+    changed = TRUE;
+}
+void playButtonClick() {
+    BT.musicTogglePlayPause();
+}
+void nextButtonClick() {
+    BT.musicNextTrack();
+}
+void prevButtonClick() {
+    BT.musicPreviousTrack();
+}
+void bndButtonClick() {
+    if (BT.BTState == Discoverable) {
+        BT.pairingExit();
+    }
+}
+void bndButtonHold() {
+    if (BT.BTState == Discoverable) {
+        BT.pairingExit();
+    } else {
+        BT.pairingInit();
+    }
+
+}
+void oneButtonClick() {}
+void twoButtonClick() {}
+void threeButtonClick() {}
+void fourButtonClick() {}
+void fiveButtonClick() {}
+void sixButtonClick() {}
+void sixButtonClick() {}
+
+AnalogButtons analogButtons(ANALOG_PIN, 30);
+
+Button oneButton   = Button(930,&oneButtonClick);//10k  930
+Button twoButton   = Button(838,&twoButtonClick);//22k  838
+Button threeButton = Button(769,&threeButtonClick);//33k  769
+Button fourButton  = Button(696,&fourButtonClick);//47k  696
+Button fiveButton  = Button(609,&fiveButtonClick);//68k  609
+Button sixButton   = Button(511,&sixButtonClick);//100k 511
+Button muteButton  = Button(409,&muteButtonClick);//150k 409
+Button playButton  = Button(319,&playButtonClick);//220k 319
+Button nextButton  = Button(237,&nextButtonClick);//330k 237
+Button prevButton  = Button(179,&prevButtonClick);//470k 179
+Button bndButton   = Button(130,&bndButtonClick, &bndButtonHold, 2000, 10000);//680k 130
 
 
 void loadConfig() {
@@ -59,7 +153,6 @@ void loadConfig() {
             *((char*)&storage + t) = EEPROM.read(CONFIG_START + t);
         }
     }
-
 }
 
 
@@ -108,11 +201,14 @@ void doEncoderB() {
 
 void updateMuted() {   
     if (storage.muted) {    //MUTE
-        int potValue = round(pow(10,-minVolume/20)*255);        
+        int potValue = round(pow(10,-minVolume/20)*255);   
+        display.setSegments(SEG_OFF);     
     } else {
+        display.setSegments(SEG_ON);  
         storage.volume = constrain(storage.volume, maxStartupVol, minVolume);
         int potValue = round(pow(10,-storage.volume/20)*255); //UNMUTE   
     }
+    lastDisplayUpdate = Millis();
     mcp42xxx.setValue(CHANNEL_ALL, potValue); //set volume
     digitalWrite(LED1Pin, !storage.muted);
     digitalWrite(LED2Pin, !storage.muted);
@@ -128,73 +224,9 @@ void updateVolume() {
 }
 
 
-void readMuteButton() {
-    int buttonReading = digitalRead(muteButtonPin);
-    if (buttonReading != lastButtonState) {
-    // reset the debouncing timer
-        lastDebounceTime = millis();
-    }
-    if ((millis() - lastDebounceTime) > debounceDelay) {
-        // if the button state has changed:
-        if (buttonReading != buttonState) {
-            buttonState = buttonReading;
-            // only toggle if the new button state is HIGH
-            if (buttonState == HIGH) {
-                storage.muted = !storage.muted;
-                updateMuted();
-                changed = TRUE;
-            }
-        }
-    }
-    lastButtonState = buttonReading;
-}
-
-
-void readMultiButton() {
-    
-    int multiMatrix[6][3] {
-        {911, 951, 1},  //10k:    931
-        {819, 859, 2},  //22k:    839
-        {750, 790, 3},  //33k:    770
-        {677, 717, 4},  //47k:    697
-        {590, 630, 5},  //68k:    610
-        {491, 531, 6}   //100k:    511
-    };
-
-    int reading = analogRead(multiButtonPin);
-    int buttonPressed = 0;
-
-    for (int i = 0; i< 6; i00) {
-        if (reading > multiMatrix[i][0]) && (reading < multiMatrix[i][1]) {
-            int p = multiMatrix[i][2]
-            if (multiButtonState == p) && (lastMultiButtonPressed != p) {
-                if (millis() - timePressed >= minTimePressed) {
-                    buttonPressed = p;
-                }
-            } else {
-                multiButtonState = p;
-                timePressed = millis();
-            }
-        }
-    }
-    if (buttonPressed == 1) {
-
-    } else if (buttonPressed == 2) {
-        
-    } else if (buttonPressed == 3) {
-        
-    } else if (buttonPressed == 4) {
-        
-    } else if (buttonPressed == 5) {
-        
-    } else if (buttonPressed == 6) {
-        
-    }
-
-}
-
-
 void startUp() {
+    display.setSegments(SEG_ON);
+
     while (millis() < startUpSleepDuration + fadeInDuration) {
         readMuteButton();
         if (muted) {
@@ -218,11 +250,25 @@ void setup() {
     SPI.begin();
     MCP42xxx mcp42xxx(10);   //slavePin 10
 
+    BT.begin();
+
     pinMode(encoder0PinA, INPUT);
     pinMode(encoder0PinB, INPUT);
-    pinMode(muteButtonPin, INPUT);
+
     pinMode(LED1Pin, OUTPUT);
     pinMode(LED2Pin, OUTPUT);
+
+    analogButtons.add(oneButton);
+    analogButtons.add(twoButton);
+    analogButtons.add(threeButton);
+    analogButtons.add(fourButton);
+    analogButtons.add(fiveButton);
+    analogButtons.add(sixButton);
+    analogButtons.add(muteButton);
+    analogButtons.add(playButton);
+    analogButtons.add(nextButton);
+    analogButtons.add(prevButton);
+    analogButtons.add(bndButton);
 
     loadConfig();
     storage.volume = constrain(storage.volume, maxStartupVol, minVolume);
@@ -256,11 +302,25 @@ void loop() {
             storage.volume = encoder0Pos;
         } else { // if muted or change too often
             encoder0Pos = storage.volume;
+            display.showNumberDec(storage.volume);
+            lastDisplayUpdate = millis();
             updateVolume();
         }
     }
 
-    readMuteButton();
-    readMultiButton();
-}
+    analogButtons.check();
 
+    updateDisplay();
+
+    BT.getNextEventFromBT();
+
+    If (BT.BTState == Discoverable) {
+        display.setSegments(SEG_PAIR); 
+        lastDisplayUpdate = millis();
+        lastBTState = Discoverable;
+    }
+
+    if (lastBTState == Discoverable) && (BT.BTState != Discoverable) {
+        display.clear();
+    }
+}
