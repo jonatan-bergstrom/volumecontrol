@@ -10,48 +10,33 @@
 OVC3860 BT(&Serial1, resetBTPin);
 uint16_t lastBTState;
 
-#define ANALOG_PIN A1
+#define analogButtonsPin A1
 
 #define CLK 2
 #define DIO 3
 TM1637Display display(CLK, DIO);
 display.setBrightness(0x0f);
 
-const uint8_t SEG_ON[] = {
-    ,
-    ,
-    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,   // O
-    SEG_C | SEG_E | SEG_G                           // n
-    };
-
-const uint8_t SEG_OFF[] = {
-    ,
-    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_F,   // O
-    SEG_A | SEG_E | SEG_F | SEG_G,                   // F
-    SEG_A | SEG_E | SEG_F | SEG_G,                   // F
-    };
-
-const uint8_t SEG_PAIR[] = {
-    ,
-    SEG_A | SEG_B | SEG_E | SEG_F | SEG_G,          // P
-    SEG_A | SEG_B | SEG_C | SEG_D | SEG_E | SEG_G , // a    
-    SEG_C ,                                         // i
-    SEG_E | SEG_G,                                  // r
-    };
-
 unsigned int lastDisplayUpdate;
 int displayOnTime = 2000;
+int displayScrollInterval = 200; //move one character every n milliseconds
+int displayScrollStartDelay = 400; //wait n milliseconds before starting to scroll
 
 #define CONFIG_START 32
 #define CONFIG_VERSION "ls1"
 
-#define encoder0PinA  2
-#define encoder0PinB  3
+#define encoder0PinA 2
+#define encoder0PinB 3
 
-const int muteButtonPin = 4; 
-const int LED1Pin = 5;
-const int LED2Pin = 6;
-const int multiButtonPin = A0;
+#define muteButtonPin 4
+#define LED1Pin 5
+#define LED2Pin 6
+#define multiButtonPin A0
+
+#define tempSensorPin A1
+#define fanPin A2
+
+#define slaveSelectPin = 10;
 
 volatile unsigned int encoder0Pos = 0;
 unsigned int lastEncoder0Pos = 0;
@@ -65,7 +50,6 @@ struct StoreStruct {
     20, FALSE
 };
 
-const int slaveSelectPin = 10;
 const int maxStartupVol = 30;
 const int saveInterval = 60000; //milliseconds
 const int changeInterval = 50; //milliseconds
@@ -89,6 +73,51 @@ int lastMultiButtonPressed;
 int timePressed;
 int minTimePressed = 100;
 
+int numTempReadings = 10;
+float sumTempReadings = 15 * numTempReadings;
+unsigned long lastTempReading = 0;
+int tempReadingInterval = 200; //how often to read temp in milliseconds
+float fanStartThreshold = 40; //degrees celsius
+float fanFullThreshold = 70; //degrees celsius
+float fanMinDuty = 0.4; // minimum % PWM
+
+struct Characters {
+    char character;
+    uint8_t hexCode;
+};
+
+Characters charArray[53] = {
+  {"0", 0x7E}, {"1", 0x30}, {"2", 0x6D}, {"3", 0x79}, {"4", 0x33}, {"5", 0x5B}, {"6", 0x5F}, 
+  {"7", 0x70}, {"8", 0x7F}, {"9", 0x7B}, {" ", 0x00}, {"A", 0x77}, {"a", 0x7D}, {"B", 0x7F}, 
+  {"b", 0x1F}, {"C", 0x4E}, {"c", 0x0D}, {"D", 0x7E}, {"d", 0x3D}, {"E", 0x4F}, {"e", 0x6f}, 
+  {"F", 0x47}, {"f", 0x47}, {"G", 0x5E}, {"g", 0x7B}, {"H", 0x37}, {"h", 0x17}, {"I", 0x30}, 
+  {"i", 0x10}, {"J", 0x3C}, {"j", 0x38}, {"K", 0x37}, {"k", 0x17}, {"L", 0x0E}, {"l", 0x06}, 
+  {"M", 0x55}, {"m", 0x55}, {"N", 0x15}, {"n", 0x15}, {"O", 0x7E}, {"o", 0x1D}, {"P", 0x67}, 
+  {"p", 0x67}, {"Q", 0x73}, {"q", 0x73}, {"R", 0x77}, {"r", 0x05}, {"S", 0x5B}, {"s", 0x5B}, 
+  {"T", 0x46}, {"t", 0x0F}, {"U", 0x3E}, {"u", 0x1C}, {"V", 0x27}, {"v", 0x23}, {"W", 0x3F}, 
+  {"w", 0x2B}, {"X", 0x25}, {"x", 0x25}, {"Y", 0x3B}, {"y", 0x33}, {"Z", 0x6D}, {"z", 0x6D}
+};
+
+void setDisplay(char message) {
+    while (message.length() < 4) {
+        message = " " + message;
+    }
+
+    uint8_t hexMessage[message.length()];
+
+    for (int c=0; c<message.length(): c++){
+        hexMessage[c] = 0x00;
+        for (i=0; i<sizeof(charArray); i++) {
+            if (message.charAt(c) == charArray[i].character) {
+                hexMessage[c] = charArray[i].hexCode;
+                break;
+            }
+        }
+    }
+    display.setSegments(hexMessage);
+    lastDisplayUpdate = Millis();
+}
+
 void updateDisplay() {
     if (millis() - lastDisplayUpdate > displayOnTime) {
         display.clear();
@@ -101,13 +130,28 @@ void muteButtonClick() {
     changed = TRUE;
 }
 void playButtonClick() {
-    BT.musicTogglePlayPause();
+    if (BT.BTState == IncomingCall) {
+        BT.callAnswer();
+    } else if (BT.BTState == OngoingCall || BT.BTState == OutgoingCall) {
+        BT.callHangUp();
+    } else {
+        BT.musicTogglePlayPause();
+    }
+    
 }
 void nextButtonClick() {
-    BT.musicNextTrack();
+    if (BT.BTState == IncomingCall) {
+        BT.callReject();
+    } else {
+        BT.musicNextTrack();
+    }
 }
 void prevButtonClick() {
-    BT.musicPreviousTrack();
+    if (BT.BTState == IncomingCall) {
+        BT.callReject();
+    } else {
+        BT.musicPreviousTrack();
+    }
 }
 void bndButtonClick() {
     if (BT.BTState == Discoverable) {
@@ -130,7 +174,7 @@ void fiveButtonClick() {}
 void sixButtonClick() {}
 void sixButtonClick() {}
 
-AnalogButtons analogButtons(ANALOG_PIN, 30);
+AnalogButtons analogButtons(analogButtonsPin, 30);
 
 Button oneButton   = Button(930,&oneButtonClick);//10k  930
 Button twoButton   = Button(838,&twoButtonClick);//22k  838
@@ -202,13 +246,13 @@ void doEncoderB() {
 void updateMuted() {   
     if (storage.muted) {    //MUTE
         int potValue = round(pow(10,-minVolume/20)*255);   
-        display.setSegments(SEG_OFF);     
+        setDisplay("OFF");    
     } else {
-        display.setSegments(SEG_ON);  
+        setDisplay("ON");
         storage.volume = constrain(storage.volume, maxStartupVol, minVolume);
         int potValue = round(pow(10,-storage.volume/20)*255); //UNMUTE   
     }
-    lastDisplayUpdate = Millis();
+    
     mcp42xxx.setValue(CHANNEL_ALL, potValue); //set volume
     digitalWrite(LED1Pin, !storage.muted);
     digitalWrite(LED2Pin, !storage.muted);
@@ -225,7 +269,7 @@ void updateVolume() {
 
 
 void startUp() {
-    display.setSegments(SEG_ON);
+    setDisplay("ON");
 
     while (millis() < startUpSleepDuration + fadeInDuration) {
         readMuteButton();
@@ -244,19 +288,37 @@ void startUp() {
     }
 }
 
+void updateFan() {
+    if (millis() - lastTempReading = tempReadingInterval) {
+        lastTempReading = millis();
+        float temp = ((float)analogRead(A0) * 5.0 / 1024.0) - 0.5;
+        temp = temp / 0.01;
+        meanTemp = (sumTempReadings * (numTempReadings - 1) + temp) / numTempReadings;
+
+        if (meanTemp >= fanStartThreshold) {
+            duty = map(meanTemp, fanStartThreshold, fanFullThreshold , fanMinDuty * 255, 255);
+            duty = constrain(duty, fanMinDuty * 255, 255)
+            analogWrite(fanPin, duty);
+        } else {
+            analogWrite(fanPin, 0);
+        }
+    }
+}
+
 
 void setup() {
     // initialize SPI
     SPI.begin();
-    MCP42xxx mcp42xxx(10);   //slavePin 10
+    MCP42xxx mcp42xxx(slaveSelectPin);   //slavePin 10
 
     BT.begin();
 
     pinMode(encoder0PinA, INPUT);
     pinMode(encoder0PinB, INPUT);
-
     pinMode(LED1Pin, OUTPUT);
     pinMode(LED2Pin, OUTPUT);
+    pinMode(tempSensorPin, INPUT);
+    pinMode(fanPin, OUTPUT);
 
     analogButtons.add(oneButton);
     analogButtons.add(twoButton);
@@ -298,25 +360,29 @@ void loop() {
     encoder0Pos = constrain(encoder0Pos, maxVolume, minVolume); //ensure encoderpos is within limits
 
     if (lastEncoder0Pos != encoder0Pos) { //encoder has turned
-        if (!storage.muted && millis() - lastChange > changeInterval) { //not muted and change is not too soon since last
+        if (!storage.muted && millis() - lastChange >= changeInterval) { //not muted and change is not too soon since last
             storage.volume = encoder0Pos;
+            setDisplay(String(storage.volume));
+            updateVolume();
         } else { // if muted or change too often
             encoder0Pos = storage.volume;
-            display.showNumberDec(storage.volume);
-            lastDisplayUpdate = millis();
-            updateVolume();
+            if (storage.muted) {
+                setDisplay("OFF");
+            }
         }
     }
 
     analogButtons.check();
+
+    updateFan();
 
     updateDisplay();
 
     BT.getNextEventFromBT();
 
     If (BT.BTState == Discoverable) {
-        display.setSegments(SEG_PAIR); 
-        lastDisplayUpdate = millis();
+        setDisplay("Pair");
+
         lastBTState = Discoverable;
     }
 
