@@ -11,6 +11,7 @@ OVC3860 BT(&Serial1, resetBTPin);
 uint16_t lastBTState;
 
 #define analogButtonsPin A1
+#define analogNumbersPin A4
 
 #define CLK 2
 #define DIO 3
@@ -178,11 +179,11 @@ AnalogButtons analogButtons(analogButtonsPin, 30);
 
 Button oneButton   = Button(930,&oneButtonClick);//10k  930
 Button twoButton   = Button(838,&twoButtonClick);//22k  838
-Button threeButton = Button(769,&threeButtonClick);//33k  769
+Button threeButton = Button(,&threeButtonClick);//200k
 Button fourButton  = Button(696,&fourButtonClick);//47k  696
 Button fiveButton  = Button(609,&fiveButtonClick);//68k  609
 Button sixButton   = Button(511,&sixButtonClick);//100k 511
-Button muteButton  = Button(409,&muteButtonClick);//150k 409
+Button muteButton  = Button(,&muteButtonClick);//100k 
 Button playButton  = Button(319,&playButtonClick);//220k 319
 Button nextButton  = Button(237,&nextButtonClick);//330k 237
 Button prevButton  = Button(179,&prevButtonClick);//470k 179
